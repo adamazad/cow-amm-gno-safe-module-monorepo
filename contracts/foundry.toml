@@ -1,0 +1,19 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+test = "tests"
+script = "scripts"
+solc_version = "0.8.25"
+evm_version = "cancun"
+
+fs_permissions = [{ access = "read-write", path = "./"}]
+
+[fmt]
+width = 120
+tab_width = 2
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+[rpc_endpoints]
+gnosis = "${GNOSIS_CHAIN_RPC_URL}"

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "codegen": {
+      "outputs": []
+    },
+    "build": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "outputs": []
+    },
+    "lint": {
+      "outputs": []
+    },
+    "format": {
+      "outputs": []
+    },
+    "dev": {
+      "cache": false
+    }
+  },
+  "globalDependencies": [".env", "tsconfig.json"],
+  "globalEnv": ["NODE_ENV"]
+}

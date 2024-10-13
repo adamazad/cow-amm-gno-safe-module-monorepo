@@ -1,0 +1,28 @@
+{
+  "name": "@karpatkey/cow-amm-safe-gno-module-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@8.6.10",
+  "workspaces": [
+    "contracts"
+  ],
+  "contributors": [],
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "lint:commit-message": "commitlint -e",
+    "format": "turbo run format",
+    "husky": "husky install"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^17.4.2",
+    "@commitlint/config-conventional": "^17.4.2",
+    "husky": "^8.0.3",
+    "prettier": "^2.8.3",
+    "turbo": "2.1.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

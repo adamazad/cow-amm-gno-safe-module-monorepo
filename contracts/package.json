@@ -1,0 +1,22 @@
+{
+  "name": "@karpatkey/cow-amm-safe-gno-module-contracts",
+  "description": "CoW AMM Safe/GNO Module",
+  "version": "0.0.1",
+  "main": "build/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "forge test",
+    "build": "forge build",
+    "format": "forge fmt"
+  },
+  "keywords": [],
+  "license": "ISC",
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.2",
+    "forge-std": "github:foundry-rs/forge-std#v1"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": "^18.11.9"
+  }
+}
