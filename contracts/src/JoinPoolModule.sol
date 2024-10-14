@@ -1,15 +1,11 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 pragma solidity 0.8.25;
 
-import {console} from "forge-std/console.sol";
 import {IERC20, IBPool} from "./IBPool.sol";
 import {ISafe, Enum} from "./ISafe.sol";
+import {BNum} from "./libs/BNum.sol";
 
 contract JoinPoolModule {
-  /// @dev GNO contract address
-  address public immutable GNO = 0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb;
-  /// @dev Safe contract address
-  address public immutable SAFE = 0x4d18815D14fe5c3304e87B3FA18318baa5c23820;
   /// @dev BCowPool (50-GNO/50-SAFE) pool address
   address public immutable POOL = 0xAD58D2Bc841Cb8e4f8717Cb21e3FB6c95DCBc286;
 
@@ -23,6 +19,9 @@ contract JoinPoolModule {
   error CallError(address to, uint256 value, bytes data, Enum.Operation operation);
 
   /// @notice Joins a pool
+  /// It finds the token with the lowest balance in the Safe account,
+  /// calculates the proportional amounts of all tokens,
+  /// and finally joins the pool with the calculated amounts.
   /// @param safe The Safe account contract address
   function joinPool(address safe) public {
     // Fetches the final tokens of the pool and their balances
@@ -55,23 +54,14 @@ contract JoinPoolModule {
       }
     }
 
-    console.log("referenceTokenBalance", safeLowestTokenAmountBalance);
-    console.log("poolTokenBalances[referenceTokenIndex]", poolTokensWithBptBalances[safeLowestTokenAmountIndex]);
-    console.log("safeTokenBalances[referenceTokenIndex]", safeTokenBalances[safeLowestTokenAmountIndex]);
-
     // Calculate the proportional amounts ratio based on the lowest balance in Safe account
     uint256 proportionalAmountsRatio =
       _divDownFixed(safeLowestTokenAmountBalance, poolTokensWithBptBalances[safeLowestTokenAmountIndex]);
-
-    console.log("proportionalAmountsRatio", proportionalAmountsRatio);
 
     // Calculate the proportional amounts for all tokens plus the BPT
     uint256[] memory proportionalAmountsWithBpt = new uint256[](poolTokensWithBptBalances.length);
     for (uint256 i = 0; i < proportionalAmountsWithBpt.length; i++) {
       proportionalAmountsWithBpt[i] = (poolTokensWithBptBalances[i] * proportionalAmountsRatio) / 1e18;
-
-      // Debug
-      console.log("proportionalAmounts[i]", i, proportionalAmountsWithBpt[i]);
     }
 
     // BPT amount and poolAmountOut math, ported from the balancer sdk
@@ -79,18 +69,13 @@ contract JoinPoolModule {
     uint256 bptAmountReferenceBalance = poolTokensWithBptBalances[poolTokensWithBptBalances.length - 1];
     uint256 bptRatio = BNum.bdiv(bptAmount, bptAmountReferenceBalance);
 
-    console.log("bptAmount", bptAmount);
-    console.log("bptAmountReferenceBalance", bptAmountReferenceBalance);
-    console.log("bptRatio", bptRatio);
-
-    // Calls to execute
+    // Calls to execute: approvals + join pool
     Call[] memory calls = new Call[](poolTokens.length + 1);
 
     // Map the proportional amounts to the max amounts in for the pool token (excluding the BPT)
     uint256[] memory maxAmountsIn = new uint256[](poolTokens.length);
     for (uint256 i = 0; i < maxAmountsIn.length; i++) {
       maxAmountsIn[i] = proportionalAmountsWithBpt[i];
-      console.log("maxAmountsIn[i]", i, maxAmountsIn[i]);
     }
 
     // Approve the pool to spend the tokens from the safe
@@ -98,11 +83,9 @@ contract JoinPoolModule {
       calls[i] = buildApproveTokenCall(poolTokens[i], POOL, maxAmountsIn[i]);
     }
 
-    // Join the pool
-    // add 0.01% slippage
+    // Join the pool with 99.99% of the BPT amount
+    // sending the exact amount of BPT reverts with BPool_TokenAmountInAboveMaxAmountIn error
     uint256 poolAmountOut = (BNum.bmul(bptAmountReferenceBalance, bptRatio) * 9999) / 10_000;
-
-    console.log("poolAmountOut", poolAmountOut);
 
     // Add the join pool call, last in the array
     calls[calls.length - 1] = buildJoinPoolCall(POOL, poolAmountOut, maxAmountsIn);
@@ -151,49 +134,5 @@ contract JoinPoolModule {
 
   function _divDownFixed(uint256 a, uint256 b) internal pure returns (uint256) {
     return (a * 1e18) / b;
-  }
-}
-
-/// @dev BNum library from https://github.com/balancer/cow-amm/blob/04c915d1ef6150b5334f4b69c7af7ddd59e050e2/src/contracts/BNum.sol#L107
-library BNum {
-  error BNum_DivZero();
-  error BNum_DivInternal();
-  error BNum_MulOverflow();
-
-  uint256 constant BONE = 1e18;
-
-  function bmul(uint256 a, uint256 b) internal pure returns (uint256) {
-    unchecked {
-      uint256 c0 = a * b;
-      if (a != 0 && c0 / a != b) {
-        revert BNum_MulOverflow();
-      }
-      // NOTE: using >> 1 instead of / 2
-      uint256 c1 = c0 + (BONE >> 1);
-      if (c1 < c0) {
-        revert BNum_MulOverflow();
-      }
-      uint256 c2 = c1 / BONE;
-      return c2;
-    }
-  }
-
-  function bdiv(uint256 a, uint256 b) internal pure returns (uint256) {
-    unchecked {
-      if (b == 0) {
-        revert BNum_DivZero();
-      }
-      uint256 c0 = a * BONE;
-      if (a != 0 && c0 / a != BONE) {
-        revert BNum_DivInternal(); // bmul overflow
-      }
-      // NOTE: using >> 1 instead of / 2
-      uint256 c1 = c0 + (b >> 1);
-      if (c1 < c0) {
-        revert BNum_DivInternal(); //  badd require
-      }
-      uint256 c2 = c1 / b;
-      return c2;
-    }
   }
 }
