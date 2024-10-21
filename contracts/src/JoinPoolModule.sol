@@ -4,10 +4,21 @@ pragma solidity 0.8.25;
 import {IERC20, IBPool} from "./IBPool.sol";
 import {ISafe, Enum} from "./ISafe.sol";
 import {BNum} from "./libs/BNum.sol";
+import {ILlamaPay} from "./ILlamaPay.sol";
 
+/// @title JoinPoolModule
+/// @notice This contract is used to join a pool and transfer the LP tokens to the recipient
 contract JoinPoolModule {
   /// @dev BCowPool (50-GNO/50-SAFE) pool address
   address public immutable POOL = 0xAD58D2Bc841Cb8e4f8717Cb21e3FB6c95DCBc286;
+  /// @dev The Safe account contract address
+  address public safe;
+  /// @dev The address that will receive the LP tokens, can be address(0)
+  address public lpTokenRecipient;
+  /// @dev The LlamaPay contract address
+  address public llamaPay;
+  /// @dev The LlamaPay stream params, passed to the LlamaPay contract
+  ILlamaPay.LlamaPayStreamParams public llamaPayStreamParams;
 
   struct Call {
     address to;
@@ -16,14 +27,53 @@ contract JoinPoolModule {
     Enum.Operation operation;
   }
 
+  error InvalidLlamaPayStreamParamsError();
   error CallError(address to, uint256 value, bytes data, Enum.Operation operation);
 
+  /// @notice Constructor
+  /// @param safe_ The Safe account contract address
+  /// @param lpTokenRecipient_ The address that will receive the LP tokens
+  /// @param llamaPay_ The LlamaPay contract address
+  /// @param llamaPayStreamParams_ The LlamaPay stream params: from, to, amountPerSec.
+  /// @dev The from address is the LlamaPay contract address, the to address is the Safe account address,
+  /// and the amountPerSec is the amount of tokens to stream per second.
+  constructor(
+    address safe_,
+    address lpTokenRecipient_,
+    address llamaPay_,
+    ILlamaPay.LlamaPayStreamParams memory llamaPayStreamParams_
+  ) {
+    // Validate the LlamaPay stream params
+    if (llamaPayStreamParams_.to != safe_) {
+      revert InvalidLlamaPayStreamParamsError();
+    }
+
+    safe = safe_;
+
+    lpTokenRecipient = lpTokenRecipient_;
+    llamaPay = llamaPay_;
+    llamaPayStreamParams = llamaPayStreamParams_;
+  }
+
+  /// @notice Claims the LlamaPay stream to the Safe account
+  /// @dev This function is used to claim the LlamaPay stream and transfer the tokens to the recipient
+  function withdrawLlamaPayStream() public {
+    bytes memory data = abi.encodeWithSelector(
+      ILlamaPay.withdraw.selector, llamaPayStreamParams.from, llamaPayStreamParams.to, llamaPayStreamParams.amountPerSec
+    );
+    // Call the LlamaPay contract to claim the stream
+    bool success = ISafe(safe).execTransactionFromModule(llamaPay, 0, data, Enum.Operation.Call);
+
+    if (!success) {
+      revert CallError(llamaPay, 0, data, Enum.Operation.Call);
+    }
+  }
+
   /// @notice Joins a pool
-  /// It finds the token with the lowest balance in the Safe account,
+  /// @dev It finds the token with the lowest balance in the Safe account,
   /// calculates the proportional amounts of all tokens,
   /// and finally joins the pool with the calculated amounts.
-  /// @param safe The Safe account contract address
-  function joinPool(address safe) public {
+  function joinPool() public {
     // Fetches the final tokens of the pool and their balances
     address[] memory poolTokens = IBPool(POOL).getFinalTokens();
 
@@ -99,6 +149,34 @@ contract JoinPoolModule {
         revert CallError(calls[i].to, calls[i].value, calls[i].data, calls[i].operation);
       }
     }
+  }
+
+  /// @notice Transfers the LP tokens to the canonical recipient
+  /// @dev This function is used to transfer the LP tokens to the canonical recipient
+  function transferLpTokensToRecipient() public returns (bool success, uint256 amount) {
+    // If the recipient is the zero address, do nothing
+    if (lpTokenRecipient == address(0)) {
+      return (false, 0);
+    }
+
+    // Get the Safe's LP token balance
+    amount = IERC20(POOL).balanceOf(address(safe));
+    // Transfer the LP tokens to the recipient
+    Call memory call = Call({
+      to: POOL,
+      value: 0,
+      data: abi.encodeWithSelector(IERC20.transfer.selector, lpTokenRecipient, amount),
+      operation: Enum.Operation.Call
+    });
+
+    // Execute the transfer
+    success = ISafe(safe).execTransactionFromModule(call.to, call.value, call.data, call.operation);
+
+    if (!success) {
+      revert CallError(call.to, call.value, call.data, call.operation);
+    }
+
+    return (true, amount);
   }
 
   /// @dev Builds a join pool call
